@@ -44,13 +44,11 @@ def mean_difference(target, value, loss_type="L1", weights=None):
     weights = 1.0 if weights is None else weights
     loss_type = loss_type.upper()
     if loss_type == "L1":
-        return (difference * weights).abs().sum()
+        return (difference * weights).abs().mean()
     elif loss_type == "L2":
-        return (difference ** 2 * weights).sum()
+        return (difference ** 2 * weights).mean()
     elif loss_type == "COSINE":
-        return th.cosine_similarity(
-            target, value * weights, axis=-1
-        )
+        return weights * th.cosine_similarity(target, value, axis=-2).mean()
     else:
         raise ValueError(
             "Loss type ({}), must be "
@@ -86,8 +84,7 @@ class SpectralLoss(th.nn.Module):
         self.logmag_weight = logmag_weight
         self.loudness_weight = loudness_weight
 
-    def call(self, target_audio, audio):
-
+    def forward(self, audio, target_audio):
         loss = 0.0
         loss_ops = []
         diff = spectral_ops.diff
@@ -108,29 +105,29 @@ class SpectralLoss(th.nn.Module):
                 )
 
             if self.delta_time_weight > 0:
-                target = diff(target_mag, axis=1)
-                value = diff(value_mag, axis=1)
+                target = diff(target_mag, axis=2)
+                value = diff(value_mag, axis=2)
                 loss += self.delta_time_weight * mean_difference(
                     target, value, self.loss_type
                 )
 
             if self.delta_delta_time_weight > 0:
-                target = diff(diff(target_mag, axis=1), axis=1)
-                value = diff(diff(value_mag, axis=1), axis=1)
+                target = diff(diff(target_mag, axis=2), axis=2)
+                value = diff(diff(value_mag, axis=2), axis=2)
                 loss += self.delta_delta_time_weight * mean_difference(
                     target, value, self.loss_type
                 )
 
             if self.delta_freq_weight > 0:
-                target = diff(target_mag, axis=2)
-                value = diff(value_mag, axis=2)
+                target = diff(target_mag, axis=1)
+                value = diff(value_mag, axis=1)
                 loss += self.delta_freq_weight * mean_difference(
                     target, value, self.loss_type
                 )
 
             if self.delta_delta_freq_weight > 0:
-                target = diff(diff(target_mag, axis=2), axis=2)
-                value = diff(diff(value_mag, axis=2), axis=2)
+                target = diff(diff(target_mag, axis=1), axis=1)
+                value = diff(diff(value_mag, axis=1), axis=1)
                 loss += self.delta_delta_freq_weight * mean_difference(
                     target, value, self.loss_type
                 )
@@ -145,10 +142,10 @@ class SpectralLoss(th.nn.Module):
 
         if self.loudness_weight > 0:
             target = spectral_ops.compute_loudness(
-                target_audio, n_fft=2048, use_tf=True
+                target_audio, n_fft=2048, use_th=True
             )
             value = spectral_ops.compute_loudness(
-                audio, n_fft=2048, use_tf=True
+                audio, n_fft=2048, use_th=True
             )
             loss += self.loudness_weight * mean_difference(
                 target, value, self.loss_type
@@ -179,7 +176,7 @@ class EmbeddingLoss(th.nn.Module):
         self.loss_type = loss_type
         self.pretrained_model = pretrained_model
 
-    def call(self, target_audio, audio):
+    def forward(self, audio, target_audio):
         audio, target_audio = f32(audio, target_audio)
         target_emb = self.pretrained_model(target_audio)
         synth_emb = self.pretrained_model(audio)
@@ -278,7 +275,7 @@ class EmbeddingLoss(th.nn.Module):
 #         frames /= var ** 0.5 + 1e-5
 #         return frames
 
-#     def call(self, audio):
+#     def forward(self, audio):
 #         """Returns the embeddings.
 
 #         Args:
