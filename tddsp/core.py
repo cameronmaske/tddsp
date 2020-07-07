@@ -23,6 +23,7 @@ import numpy as np
 from scipy import fftpack
 
 Number = TypeVar("Number", int, float, np.ndarray, th.Tensor)
+EPSILON = 1e-12
 
 
 def f32(*inputs):
@@ -282,7 +283,7 @@ def upsample_with_windows(
     divisor = th.nn.functional.fold(
         ones, (1, out_size), (1, window_length), stride=(1, hop_size)
     )
-    outputs = outputs / divisor
+    outputs = outputs / (divisor + EPSILON)
     if add_endpoint:
         hop_slice = slice(hop_size // 2, -hop_size // 2, None)
     else:
@@ -303,7 +304,7 @@ def log_scale(x: th.Tensor, min_x, max_x) -> th.Tensor:
 
 
 def exp_sigmoid(
-    x: th.Tensor, exponent=10.0, max_value=2.0, threshold=1e-7
+    x: th.Tensor, exponent=10.0, max_value=2.0, threshold=EPSILON
 ) -> th.Tensor:
     x, exponent = f32(x, exponent)
     return max_value * th.sigmoid(x).pow(exponent.log()) + threshold
@@ -623,7 +624,7 @@ def complex_multiplication(t1, t2):
 
 def complex_abs(t):
     real, imag = t.split(1, -1)
-    return (real ** 2 + imag ** 2).sqrt()[..., 0]
+    return (real ** 2 + imag ** 2 + EPSILON).sqrt()[..., 0]
 
 
 def fft_convolve(
@@ -728,7 +729,7 @@ def fft_convolve(
     )
     ones = th.ones_like(audio_frames_out)
     divisor = th.nn.functional.fold(ones, (1, audio_out_size), (1, n_ir_frames))
-    audio_out = audio_out / divisor
+    audio_out = audio_out / (divisor + EPSILON)
     audio_out = audio_out[:, 0, 0, :]
     return crop_and_compensate_delay(
         audio_out, audio_size, ir_size, padding, delay_compensation
@@ -826,7 +827,7 @@ def frequency_impulse_response(
     return apply_window_to_impulse_response(impulse_response, window_size)
 
 
-def sinc(x, threshold=1e-20):
+def sinc(x, threshold=EPSILON):
     """Normalized zero phase version (peak at zero)."""
     x = f32(x)
     x[x.abs() < threshold] = threshold
