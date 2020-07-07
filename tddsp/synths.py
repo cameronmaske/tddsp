@@ -42,10 +42,10 @@ class Additive(processors.Processor):
 
         Args:
             amplitudes: 3-D Tensor of synthesizer controls, of shape
-                [batch_size, time, 1].
+                [batch_size, 1, time].
             harmonic_distribution: 3-D Tensor of synthesizer controls, of shape
-                [batch_size, time, n_harmonics].
-            f0_hz: Fundamental frequencies in hertz. Shape [batch_size, time, 1].
+                [batch_size, n_harmonics, time].
+            f0_hz: Fundamental frequencies in hertz. Shape [batch_size, 1, time].
 
         Returns:
             controls: Dictionary of tensors of synthesizer controls.
@@ -57,7 +57,7 @@ class Additive(processors.Processor):
 
         # Bandlimit the harmonic distribution.
         if self.normalize_below_nyquist:
-            n_harmonics = int(harmonic_distribution.shape[-2])
+            n_harmonics = harmonic_distribution.shape[-2]
             harmonic_frequencies = core.get_harmonic_frequencies(
                 f0_hz, n_harmonics
             )
@@ -66,9 +66,7 @@ class Additive(processors.Processor):
             )
 
         # Normalize
-        harmonic_distribution /= harmonic_distribution.sum(
-            (0, -1), keepdims=True
-        )
+        harmonic_distribution /= harmonic_distribution.sum(1, keepdims=True)
 
         return {
             "amplitudes": amplitudes,
