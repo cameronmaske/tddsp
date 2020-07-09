@@ -238,12 +238,12 @@ def compute_mel(
     use_th=True,
 ):
     """Calculate Mel Spectrogram."""
-    mag = compute_mag(audio, fft_size, overlap, pad_end)
-    num_spectrogram_bins = mag.shape[0]
+    mag = compute_mag(audio, fft_size, overlap, pad_end).transpose(-2, -1)
+    num_spectrogram_bins = mag.shape[-1]
     linear_to_mel_matrix = linear_to_mel_weight_matrix(
         bins, num_spectrogram_bins, sample_rate, lo_hz, hi_hz
-    )
-    return th.tensordot(linear_to_mel_matrix, mag, 1)
+    ).T
+    return th.tensordot(mag, linear_to_mel_matrix, 1).transpose(-2, -1)
 
 
 def compute_logmag(audio, size=2048, overlap=0.75, pad_end=True):
@@ -290,9 +290,8 @@ def compute_mfcc(
     )
     dct = tha.functional.create_dct(
         n_mfcc=mfcc_bins, n_mels=mel_bins, norm=None
-    )
-    mfccs = dct.T @ logmel
-    return mfccs[:mfcc_bins]
+    ).T
+    return dct @ logmel
 
 
 def diff(x, axis=-1):
