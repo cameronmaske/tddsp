@@ -142,10 +142,108 @@ class SpectralLoss(th.nn.Module):
 
         if self.loudness_weight > 0:
             target = spectral_ops.compute_loudness(
-                target_audio, n_fft=2048, use_th=True
+                target_audio, n_fft=max(self.fft_sizes), use_th=True
             )
             value = spectral_ops.compute_loudness(
-                audio, n_fft=2048, use_th=True
+                audio, n_fft=max(self.fft_sizes), use_th=True
+            )
+            loss += self.loudness_weight * mean_difference(
+                target, value, self.loss_type
+            )
+
+        return loss
+
+
+class MfccLoss(th.nn.Module):
+    """Multi-scale MFCC loss."""
+
+    def __init__(
+        self,
+        sample_rate=16000,
+        fft_sizes=(2048, 1024, 512, 256, 128, 64),
+        loss_type="L1",
+        mfcc_weight=1.0,
+        delta_time_weight=0.0,
+        delta_delta_time_weight=0.0,
+        delta_freq_weight=0.0,
+        delta_delta_freq_weight=0.0,
+        loudness_weight=0.0,
+        name="mfcc_loss",
+    ):
+        super(MfccLoss, self).__init__()
+        self.name = name
+        self.sample_rate = sample_rate
+        self.fft_sizes = fft_sizes
+        self.loss_type = loss_type
+        self.mfcc_weight = mfcc_weight
+        self.delta_time_weight = delta_time_weight
+        self.delta_delta_time_weight = delta_delta_time_weight
+        self.delta_freq_weight = delta_freq_weight
+        self.delta_delta_freq_weight = delta_delta_freq_weight
+        self.loudness_weight = loudness_weight
+
+    def forward(self, audio, target_audio):
+        loss = 0.0
+        loss_ops = []
+        diff = spectral_ops.diff
+
+        for size in self.fft_sizes:
+            loss_op = functools.partial(
+                spectral_ops.compute_mfcc,
+                fft_size=size,
+                sample_rate=self.sample_rate,
+                lo_hz=20.0,
+                hi_hz=self.sample_rate / 2,
+                mfcc_bins=30,
+                overlap=0.5,
+            )
+            loss_ops.append(loss_op)
+
+        # Compute loss for each fft size.
+        for loss_op in loss_ops:
+            target_mfcc = loss_op(target_audio)
+            value_mfcc = loss_op(audio)
+
+            # Add mfcc loss.
+            if self.mfcc_weight > 0:
+                loss += self.mfcc_weight * mean_difference(
+                    target_mfcc, value_mfcc, self.loss_type
+                )
+
+            if self.delta_time_weight > 0:
+                target = diff(target_mfcc, axis=2)
+                value = diff(value_mfcc, axis=2)
+                loss += self.delta_time_weight * mean_difference(
+                    target, value, self.loss_type
+                )
+
+            if self.delta_delta_time_weight > 0:
+                target = diff(diff(target_mfcc, axis=2), axis=2)
+                value = diff(diff(value_mfcc, axis=2), axis=2)
+                loss += self.delta_delta_time_weight * mean_difference(
+                    target, value, self.loss_type
+                )
+
+            if self.delta_freq_weight > 0:
+                target = diff(target_mfcc, axis=1)
+                value = diff(value_mfcc, axis=1)
+                loss += self.delta_freq_weight * mean_difference(
+                    target, value, self.loss_type
+                )
+
+            if self.delta_delta_freq_weight > 0:
+                target = diff(diff(target_mfcc, axis=1), axis=1)
+                value = diff(diff(value_mfcc, axis=1), axis=1)
+                loss += self.delta_delta_freq_weight * mean_difference(
+                    target, value, self.loss_type
+                )
+
+        if self.loudness_weight > 0:
+            target = spectral_ops.compute_loudness(
+                target_audio, n_fft=max(self.fft_sizes), use_th=True
+            )
+            value = spectral_ops.compute_loudness(
+                audio, n_fft=max(self.fft_sizes), use_th=True
             )
             loss += self.loudness_weight * mean_difference(
                 target, value, self.loss_type
